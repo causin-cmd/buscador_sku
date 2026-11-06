@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+<title>Buscador de SKU</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: una sola columna tipo terminal de bodega — objetivo arriba, zona de escaneo grande al centro, historial abajo. */
+:root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --ink: #141a24;
+  --muted: #5d6676;
+  --line: #d5dae2;
+  --accent: #f2a900;      /* amarillo señalética */
+  --accent-ink: #1c1400;
+  --hit: #12a150;         /* encontrado */
+  --hit-ink: #ffffff;
+  --miss: #c8382f;
+  --miss-soft: #fbe3e1;
+  --chip: #e3e7ee;
+  --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-code: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141b; --panel: #181e28; --ink: #eef1f6; --muted: #98a2b3; --line: #2a3342;
+    --accent: #f5b623; --accent-ink: #1c1400; --hit: #17b85d; --hit-ink: #ffffff;
+    --miss: #ff6b5f; --miss-soft: #3a1d1b; --chip: #232b38; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141b; --panel: #181e28; --ink: #eef1f6; --muted: #98a2b3; --line: #2a3342;
+  --accent: #f5b623; --accent-ink: #1c1400; --hit: #17b85d; --hit-ink: #ffffff;
+  --miss: #ff6b5f; --miss-soft: #3a1d1b; --chip: #232b38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 32px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: 1.9rem; letter-spacing: .01em; margin: 0; text-transform: uppercase; line-height: 1; display: flex; align-items: center; gap: 10px; }
+h1 .tag { background: var(--accent); color: var(--accent-ink); padding: 3px 8px 1px; border-radius: 3px; font-size: 1rem; letter-spacing: .08em; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.label { font-family: var(--f-display); font-weight: 700; font-size: .95rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.row { display: flex; gap: 8px; }
+input[type=text] {
+  flex: 1; min-width: 0; font-family: var(--f-code); font-weight: 600; font-size: 1.25rem; padding: 12px 14px;
+  border: 2px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); text-transform: uppercase;
+}
+input[type=text]:focus { outline: none; border-color: var(--accent); }
+input#scan { font-size: 1.8rem; padding: 16px; border-width: 3px; }
+input#scan:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+button {
+  font-family: var(--f-display); font-weight: 700; font-size: 1.05rem; letter-spacing: .06em; text-transform: uppercase;
+  border: 2px solid var(--ink); background: transparent; color: var(--ink); border-radius: 6px; padding: 10px 14px; cursor: pointer;
+}
+button.primary { background: var(--ink); color: var(--panel); }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.ghost { border-color: var(--line); color: var(--muted); font-size: .9rem; padding: 6px 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--f-code); font-weight: 600; font-size: 1.05rem; background: var(--chip); border-radius: 4px; padding: 6px 6px 6px 10px; display: inline-flex; align-items: center; gap: 8px; word-break: break-all; }
+.chip.found { background: var(--hit); color: var(--hit-ink); }
+.chip.found::before { content: "✓"; }
+.chip button { border: 0; padding: 0 6px; font-size: 1.1rem; color: inherit; opacity: .6; }
+.chip button:hover { opacity: 1; }
+.empty { color: var(--muted); font-size: .95rem; margin: 0; }
+.scanzone { border-width: 2px; transition: background-color .15s, border-color .15s; }
+.scanzone.flash-miss { background: var(--miss-soft); border-color: var(--miss); }
+.scanzone.disabled { opacity: .55; }
+.last { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 2.2rem; }
+.last .code { font-family: var(--f-code); font-weight: 600; font-size: 1.5rem; word-break: break-all; min-width: 0; }
+.last .verdict { font-family: var(--f-display); font-weight: 800; font-size: 1.3rem; text-transform: uppercase; letter-spacing: .05em; color: var(--miss); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--bg); border-radius: 6px; padding: 8px 10px; }
+.stat b { display: block; font-family: var(--f-display); font-weight: 800; font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .95rem; }
+.opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.opts input { width: 18px; height: 18px; accent-color: var(--ink); }
+ol#hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+ol#hist li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--line); font-family: var(--f-code); font-size: .95rem; font-variant-numeric: tabular-nums; }
+ol#hist li .c { word-break: break-all; min-width: 0; }
+ol#hist li .t { color: var(--muted); flex-shrink: 0; }
+ol#hist li.hit { color: var(--hit); font-weight: 600; }
+ol#hist li.dup .c::after { content: "  (repetido)"; color: var(--muted); font-weight: 500; }
+
+/* Pantalla completa de alerta */
+#alert {
+  position: fixed; inset: 0; z-index: 50; background: var(--hit); color: var(--hit-ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px));
+  cursor: pointer;
+}
+#alert.pulse { animation: pulse .5s ease-out 3; }
+@keyframes pulse { 0% { filter: brightness(1.5); } 100% { filter: brightness(1); } }
+@media (prefers-reduced-motion: reduce) { #alert.pulse { animation: none; } }
+#alert .big { font-family: var(--f-display); font-weight: 800; font-size: clamp(3.2rem, 14vw, 9rem); line-height: .9; text-transform: uppercase; margin: 0; }
+#alert .code { font-family: var(--f-code); font-weight: 600; font-size: clamp(1.4rem, 6vw, 3rem); word-break: break-all; background: rgba(0,0,0,.18); padding: 6px 14px; border-radius: 6px; }
+#alert .hint { font-size: 1.1rem; opacity: .9; }
+#alertLocs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 900px; }
+#alertLocs span { font-family: var(--f-code); font-weight: 600; font-size: clamp(1rem, 3.5vw, 1.5rem); border: 2px solid rgba(255,255,255,.7); border-radius: 6px; padding: 4px 10px; }
+
+/* Ubicaciones desde ShipHero */
+#locs { display: flex; flex-direction: column; gap: 12px; }
+.loc { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; min-width: 0; }
+.loc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 10px 12px; background: var(--bg); }
+.loc-head .sku { font-family: var(--f-code); font-weight: 600; font-size: 1.1rem; }
+.loc-head .name { color: var(--muted); flex: 1; min-width: 0; }
+.loc-head .tot { font-family: var(--f-display); font-weight: 800; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.wh { font-family: var(--f-display); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .85rem; color: var(--muted); padding: 8px 12px 2px; display: flex; justify-content: space-between; }
+.bins { list-style: none; margin: 0; padding: 0 12px 8px; }
+.bins li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.bins li:last-child { border-bottom: 0; }
+.bins .bin { font-family: var(--f-code); font-weight: 600; font-size: 1.1rem; flex: 1; min-width: 0; word-break: break-all; }
+.bins .qty { font-family: var(--f-code); font-weight: 600; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.pill { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; border-radius: 3px; padding: 2px 6px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.pill.pick { background: var(--accent); color: var(--accent-ink); }
+.loc-msg { padding: 10px 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.loc-msg.err { color: var(--miss); }
+.note { font-size: .85rem; color: var(--muted); padding: 0 12px 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Buscador de SKU <span class="tag">Caja</span></h1>
+    <button class="ghost" id="btnTest" type="button">Probar sonido</button>
+  </header>
+
+  <section class="panel">
+    <div class="label"><span>1 · SKU que buscas</span><button class="ghost" id="btnClearTargets" type="button">Quitar todos</button></div>
+    <form class="row" id="fTarget" autocomplete="off">
+      <input type="text" id="target" placeholder="Escribe o escanea el SKU" autocapitalize="characters" spellcheck="false">
+      <button class="primary" type="submit">Agregar</button>
+    </form>
+    <div class="chips" id="chips"></div>
+    <p class="empty" id="noTargets">Agrega uno o varios SKU. Al presionar Enter el cursor pasa solo al campo de escaneo.</p>
+  </section>
+
+  <section class="panel scanzone" id="zone">
+    <div class="label"><span>2 · Escanea los productos de la caja</span><button class="ghost" id="btnReset" type="button">Nueva caja</button></div>
+    <form id="fScan" autocomplete="off">
+      <input type="text" id="scan" placeholder="Escanea aquí…" autocapitalize="characters" spellcheck="false" autofocus>
+    </form>
+    <div class="last"><span class="code" id="lastCode">—</span><span class="verdict" id="lastVerdict"></span></div>
+  </section>
+
+  <section class="panel" id="locPanel">
+    <div class="label"><span>3 · Ubicaciones en ShipHero</span><span id="dbAge" style="text-transform:none;letter-spacing:0;font-family:var(--f-body);font-weight:500"></span></div>
+    <div id="locs"></div>
+    <p class="empty" id="noLocs">Al agregar un SKU aparecen aquí sus ubicaciones y las unidades en cada una. Los datos se actualizan cada hora.</p>
+  </section>
+</div>
+
+<div id="alert" hidden>
+  <p class="big">¡Está aquí!</p>
+  <div class="code" id="alertCode"></div>
+  <div id="alertLocs"></div>
+  <div class="hint">Escanea el siguiente o toca la pantalla para seguir</div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('sku-finder:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('sku-finder:' + k, JSON.stringify(v)); } catch {} }
+  };
+
+  let targets = store.get('targets', []);          // [{raw, found}]
+  let scans = [];                                   // [{code, hit, dup, t}]
+  const seen = new Set();
+  const O = { zeros: true, partial: false, missSound: true };
+
+  // ---------- Audio ----------
+  let ctx;
+  function audio() {
+    if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function tone(freq, start, dur, vol = 0.5, type = 'square') {
+    const a = audio(); if (!a) return;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.value = freq;
+    const t0 = a.currentTime + start;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function soundHit() { [880, 1175, 1568, 1175, 1568].forEach((f, i) => tone(f, i * 0.13, 0.14, 0.6)); }
+  function soundMiss() { tone(220, 0, 0.08, 0.25, 'sine'); }
+  ['keydown', 'pointerdown'].forEach(ev => document.addEventListener(ev, audio, { capture: true }));
+
+  // ---------- Matching ----------
+  function norm(s) {
+    let v = String(s).trim().toUpperCase().replace(/\s+/g, '');
+    if (O.zeros) v = v.replace(/^0+(?=.)/, '');
+    return v;
+  }
+  function findTarget(code) {
+    const c = norm(code);
+    const viaBc = bcMap.get(c) ? norm(bcMap.get(c)) : null;   // escaneo = codigo de barras de un SKU
+    return targets.find(t => {
+      const n = norm(t.raw);
+      if (O.partial ? c.includes(n) : c === n) return true;
+      if (viaBc && viaBc === n) return true;
+      const L = lookup(t.raw);                                  // objetivo ingresado como barra o SKU
+      return !!(L && (norm(L.sku) === c || (L.item.b && norm(L.item.b) === c)));
+    });
+  }
+
+  // ---------- Render ----------
+  function renderTargets() {
+    const box = $('chips'); box.textContent = '';
+    targets.forEach((t, i) => {
+      const el = document.createElement('span');
+      el.className = 'chip' + (t.found ? ' found' : '');
+      const txt = document.createElement('span'); txt.textContent = t.raw;
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.title = 'Quitar';
+      x.onclick = () => { targets.splice(i, 1); saveTargets(); renderAll(); focusScan(); };
+      el.append(txt, x); box.append(el);
+    });
+    $('noTargets').hidden = targets.length > 0;
+    $('btnClearTargets').hidden = targets.length === 0;
+    $('zone').classList.toggle('disabled', targets.length === 0);
+  }
+  function renderStats() {}
+  function renderHist() {}
+  function renderAll() { renderTargets(); renderStats(); renderHist(); renderLocs(); }
+  function saveTargets() { store.set('targets', targets); }
+
+  // ---------- Ubicaciones (foto de ShipHero, se actualiza cada hora) ----------
+  let DB = null, dbState = 'loading';
+  const skuMap = new Map();   // norm(sku) -> sku
+  const bcMap = new Map();    // norm(barcode) -> sku
+  async function loadDb() {
+    try {
+      const r = await fetch('data/ubicaciones.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      skuMap.clear(); bcMap.clear();
+      for (const [sku, it] of Object.entries(d.skus || {})) {
+        skuMap.set(norm(sku), sku);
+        if (it.b) bcMap.set(norm(it.b), sku);
+      }
+      DB = d; dbState = 'ok';
+    } catch (e) { if (!DB) dbState = 'error'; }
+    renderLocs();
+  }
+  function lookup(raw) {
+    if (!DB) return null;
+    const n = norm(raw);
+    const sku = skuMap.get(n) || bcMap.get(n);
+    return sku ? { sku, item: DB.skus[sku] } : null;
+  }
+  const TIPO = { 1: ['Picking', 'pick'], 2: ['Almacenaje', ''], 0: ['No vendible', ''] };
+  const fmt = n => n.toLocaleString('es-CL');
+
+  function renderLocs() {
+    const box = $('locs'); box.textContent = '';
+    $('noLocs').hidden = targets.length > 0;
+    $('dbAge').textContent = DB ? 'Datos de ShipHero de las ' + new Date(DB.generado).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) + ' del ' + new Date(DB.generado).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) : '';
+    targets.forEach(t => {
+      const art = document.createElement('article'); art.className = 'loc';
+      const head = document.createElement('div'); head.className = 'loc-head';
+      const sku = document.createElement('span'); sku.className = 'sku'; sku.textContent = t.raw;
+      const name = document.createElement('span'); name.className = 'name';
+      const tot = document.createElement('span'); tot.className = 'tot';
+      head.append(sku, name, tot); art.append(head);
+      const msg = (text, err) => { const m = document.createElement('div'); m.className = 'loc-msg' + (err ? ' err' : ''); m.textContent = text; art.append(m); };
+      const L = lookup(t.raw);
+      if (dbState === 'loading') msg('Cargando ubicaciones…');
+      else if (dbState === 'error') msg('No se pudieron cargar las ubicaciones. Revisa la conexión y recarga la página.', true);
+      else if (!L) msg('Sin stock en ninguna ubicación según ShipHero (o el código no existe).');
+      else {
+        if (L.sku !== t.raw) sku.textContent = t.raw + ' → ' + L.sku;
+        name.textContent = L.item.n || '';
+        tot.textContent = fmt(L.item.u.reduce((a, r) => a + r[2], 0)) + ' u';
+        const byWh = new Map();
+        L.item.u.forEach(r => { if (!byWh.has(r[0])) byWh.set(r[0], []); byWh.get(r[0]).push(r); });
+        byWh.forEach((rows, wi) => {
+          const wh = document.createElement('div'); wh.className = 'wh';
+          const a = document.createElement('span'); a.textContent = (DB.bodegas || [])[wi] || 'Bodega';
+          const b = document.createElement('span'); b.textContent = fmt(rows.reduce((s, r) => s + r[2], 0)) + ' u';
+          wh.append(a, b); art.append(wh);
+          const ul = document.createElement('ul'); ul.className = 'bins';
+          rows.forEach(r => {
+            const li = document.createElement('li');
+            const n = document.createElement('span'); n.className = 'bin'; n.textContent = r[1];
+            const tp = TIPO[r[3]] || TIPO[0];
+            const pill = document.createElement('span'); pill.className = 'pill ' + tp[1]; pill.textContent = tp[0];
+            const q = document.createElement('span'); q.className = 'qty'; q.textContent = fmt(r[2]) + ' u';
+            li.append(n, pill, q); ul.append(li);
+          });
+          art.append(ul);
+        });
+      }
+      box.append(art);
+    });
+  }
+
+  function fillAlertLocs(raw) {
+    const box = $('alertLocs'); box.textContent = '';
+    const L = lookup(raw);
+    if (!L) return;
+    L.item.u.slice(0, 6).forEach(r => {
+      const s = document.createElement('span'); s.textContent = r[1] + ' · ' + fmt(r[2]) + ' u'; box.append(s);
+    });
+  }
+
+  // ---------- Actions ----------
+  function focusScan() { $('scan').focus(); }
+  function addTargets(raw) {
+    raw.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean).forEach(s => {
+      if (!targets.some(t => norm(t.raw) === norm(s))) targets.push({ raw: s.toUpperCase(), found: false });
+    });
+    saveTargets(); renderAll();
+  }
+  function showAlert(code) {
+    $('alertCode').textContent = code;
+    const a = $('alert'); a.hidden = false;
+    a.classList.remove('pulse'); void a.offsetWidth; a.classList.add('pulse');
+  }
+  function hideAlert() { $('alert').hidden = true; }
+
+  let flashTimer;
+  function processScan(code) {
+    code = code.trim(); if (!code) return;
+    hideAlert();
+    const t = findTarget(code);
+    const key = norm(code);
+    const dup = seen.has(key); seen.add(key);
+    const now = new Date();
+    scans.push({ code: code.toUpperCase(), hit: !!t, dup, t: now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    $('lastCode').textContent = code.toUpperCase();
+    if (t) {
+      t.found = true; saveTargets();
+      $('lastVerdict').textContent = '';
+      showAlert(t.raw === code.toUpperCase() ? t.raw : t.raw + '  ←  ' + code.toUpperCase());
+      fillAlertLocs(t.raw);
+      soundHit();
+      try { navigator.vibrate && navigator.vibrate([200, 80, 200, 80, 400]); } catch {}
+    } else {
+      $('lastVerdict').textContent = targets.length ? (dup ? 'No · repetido' : 'No es') : 'Agrega un SKU arriba';
+      const z = $('zone'); z.classList.add('flash-miss'); clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => z.classList.remove('flash-miss'), 350);
+      if (O.missSound) soundMiss();
+    }
+    renderStats(); renderHist(); renderTargets();
+  }
+
+  $('fTarget').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('target').value; if (!v.trim()) { focusScan(); return; }
+    addTargets(v); $('target').value = ''; focusScan();
+  });
+  $('fScan').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('scan').value; $('scan').value = '';
+    processScan(v);
+  });
+  // Algunos lectores terminan con Tab en vez de Enter
+  $('scan').addEventListener('keydown', e => {
+    if (e.key === 'Tab' && $('scan').value.trim()) { e.preventDefault(); $('fScan').requestSubmit(); }
+  });
+  $('scan').addEventListener('input', () => { if (!$('alert').hidden) hideAlert(); });
+  $('alert').addEventListener('click', () => { hideAlert(); focusScan(); });
+
+  $('btnClearTargets').onclick = () => { targets = []; saveTargets(); renderAll(); $('target').focus(); };
+  $('btnReset').onclick = () => {
+    scans = []; seen.clear(); targets.forEach(t => t.found = false); saveTargets();
+    $('lastCode').textContent = '—'; $('lastVerdict').textContent = ''; hideAlert(); renderAll(); focusScan();
+  };
+  $('btnTest').onclick = () => { soundHit(); focusScan(); };
+
+
+  // Si se escribe con el foco fuera de un campo, mandar al campo de escaneo
+  document.addEventListener('keydown', e => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' && document.activeElement.type === 'text') return;
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) focusScan();
+    if (e.key === 'Escape') hideAlert();
+  });
+
+  // Mantener pantalla encendida
+  async function wake() { try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch {} }
+  wake(); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
+
+  renderAll();
+  loadDb(); setInterval(loadDb, 10 * 60 * 1000);
+  if (targets.length) focusScan(); else $('target').focus();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# Actualiza data/ubicaciones.json desde la API de ShipHero cada hora (8:00-20:30 hora Chile).
+# El cron va en UTC y cubre horario de verano (UTC-3) e invierno (UTC-4); ubicaciones_update.py
+# descarta las corridas que caen fuera de la ventana.
+name: Actualizar ubicaciones
+
+on:
+  schedule:
+    - cron: "0 11-23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Bajar ubicaciones
+        env:
+          SHIPHERO_USERNAME: ${{ secrets.SHIPHERO_USERNAME }}
+          SHIPHERO_PASSWORD: ${{ secrets.SHIPHERO_PASSWORD }}
+          TZ: America/Santiago
+        run: python ubicaciones_update.py ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+      - name: Publicar
+        run: |
+          git config user.name "buscador-sku-bot"
+          git config user.email "buscador-sku-bot@users.noreply.github.com"
+          git add data/ubicaciones.json
+          git diff --cached --quiet && echo "Sin cambios" && exit 0
+          git commit -m "ubicaciones $(TZ=America/Santiago date '+%Y-%m-%d %H:%M')"
+          git push
