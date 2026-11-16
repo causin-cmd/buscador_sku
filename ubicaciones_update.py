@@ -18,8 +18,7 @@ Credenciales: SHIPHERO_USERNAME / SHIPHERO_PASSWORD (secrets del repo). En el PC
 variables, usa shiphero_picks_packs.py de la carpeta del CPO (keyring).
 
 Uso:
-  python ubicaciones_update.py            # respeta la ventana horaria (para el cron)
-  python ubicaciones_update.py --force    # corre a cualquier hora
+  python ubicaciones_update.py
 """
 import json, os, sys, time
 from datetime import datetime
@@ -31,7 +30,6 @@ import requests
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "data" / "ubicaciones.json"
 CL = ZoneInfo("America/Santiago")
-VENTANA = ((8, 0), (20, 30))   # hora Chile; el cron corre mas amplio y esto filtra
 PAGE = 50
 # Solo la marca Unbranded (cuenta cliente 3PL legacy 84767; "Unbranded MX" 90165 queda fuera)
 CUENTA = "QWNjb3VudDo4NDc2Nw=="
@@ -149,11 +147,9 @@ def descargar(token):
 
 
 def main():
-    force = "--force" in sys.argv
+    # Sin ventana horaria: GitHub corre el cron solo 2-3 veces al dia a horas variables,
+    # asi que toda corrida que llegue actualiza. (--force se acepta y no hace nada.)
     now = datetime.now(CL)
-    if not force and not (VENTANA[0] <= (now.hour, now.minute) <= VENTANA[1]):
-        log("Fuera de la ventana horaria; no se actualiza.")
-        return
     bodegas, skus = descargar(_token())
     if not skus:
         raise SystemExit("ShipHero no devolvio ningun SKU con stock; no se sobrescribe el archivo.")

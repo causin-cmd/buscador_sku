@@ -13,7 +13,8 @@ en qué ubicaciones de ShipHero está el SKU y cuántas unidades hay en cada una
 - `index.html` — la página (estática, lee `data/ubicaciones.json` y lo recarga cada 10 minutos).
 - `ubicaciones_update.py` — baja de ShipHero las ubicaciones con unidades > 0 de cada SKU
   (~4,5 min, ~0,2 MB).
-- `.github/workflows/update.yml` — cron cada hora 8:00–20:30 hora Chile (copia de referencia:
+- `.github/workflows/update.yml` — cron horario, pero GitHub en la práctica lo corre 2–3 veces
+  al día a horas variables; cada corrida actualiza, sin ventana horaria (copia de referencia:
   `workflow_update.yml`). Ejecutar a mano: pestaña Actions → "Actualizar ubicaciones" → Run workflow.
 - Secrets del repo: `SHIPHERO_USERNAME`, `SHIPHERO_PASSWORD` (los mismos que picks_packs).
 
